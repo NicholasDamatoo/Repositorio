@@ -5,5 +5,12 @@
         "categoria": "bolo",
         "valor": "99.00",
         "data": "2026-10-16"
+    },
+    {
+        "tipo": "receita",
+        "descricao": "pao",
+        "categoria": "pao",
+        "valor": "1000.00",
+        "data": "2026-10-16"
     }
 ]
