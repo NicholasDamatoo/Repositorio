@@ -1,83 +1,139 @@
 import json
-from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from datetime import date
+from decimal import Decimal, InvalidOperation
 
-ARQUIVO_DADOS = Path(__file__).with_name("dados.json")
+
+ARQUIVO = Path(__file__).with_name("dados.json")
 
 
 def carregar_dados():
-    """Carrega as movimentações salvas."""
-    if not ARQUIVO_DADOS.exists():
+    """Carrega as movimentacoes financeiras do arquivo JSON."""
+    if not ARQUIVO.exists():
         return []
 
     try:
-        with ARQUIVO_DADOS.open("r", encoding="utf-8") as arquivo:
+        with ARQUIVO.open("r", encoding="utf-8") as arquivo:
             dados = json.load(arquivo)
 
         if not isinstance(dados, list):
-            raise ValueError("Formato de dados inválido.")
+            raise ValueError("O arquivo deve conter uma lista.")
+
+        for item in dados:
+            if not isinstance(item, dict):
+                raise ValueError("Movimentacao invalida.")
+
+            if item.get("tipo") not in ("receita", "despesa"):
+                raise ValueError("Tipo de movimentacao invalido.")
+
+            if not isinstance(item.get("descricao"), str):
+                raise ValueError("Descricao invalida.")
+
+            if not item["descricao"].strip():
+                raise ValueError("Descricao vazia.")
+
+            if not isinstance(item.get("categoria"), str):
+                raise ValueError("Categoria invalida.")
+
+            if not item["categoria"].strip():
+                raise ValueError("Categoria vazia.")
+
+            valor = Decimal(item["valor"])
+
+            if not valor.is_finite() or valor <= 0:
+                raise ValueError("Valor financeiro invalido.")
+
+            date.fromisoformat(item["data"])
 
         return dados
 
-    except (json.JSONDecodeError, ValueError) as erro:
-        print(f"Erro ao ler os dados: {erro}")
-        print("Os registros não foram carregados.")
-        return None
-
-    except OSError as erro:
-        print(f"Erro ao acessar o arquivo: {erro}")
-        return None
+    except (
+        OSError,
+        json.JSONDecodeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        InvalidOperation
+    ) as erro:
+        raise RuntimeError(
+            f"Nao foi possivel carregar os dados: {erro}"
+        ) from erro
 
 
 def salvar_dados(movimentacoes):
-    """Salva as movimentações em um arquivo JSON."""
+    """Salva as movimentacoes no arquivo JSON."""
+    temporario = ARQUIVO.with_name("dados.tmp")
+
     try:
-        with ARQUIVO_DADOS.open("w", encoding="utf-8") as arquivo:
+        with temporario.open("w", encoding="utf-8") as arquivo:
             json.dump(
                 movimentacoes,
                 arquivo,
                 ensure_ascii=False,
                 indent=4
             )
+
+        temporario.replace(ARQUIVO)
         return True
 
     except OSError as erro:
         print(f"Erro ao salvar os dados: {erro}")
+
+        try:
+            temporario.unlink(missing_ok=True)
+        except OSError:
+            pass
+
         return False
 
 
+def formatar_moeda(valor):
+    """Formata um valor no padrao monetario brasileiro."""
+    texto = f"{valor:,.2f}"
+    texto = texto.replace(",", "X")
+    texto = texto.replace(".", ",")
+    texto = texto.replace("X", ".")
+
+    return f"R$ {texto}"
+
+
 def ler_valor():
-    """Lê um valor monetário positivo."""
+    """Solicita um valor monetario positivo."""
     while True:
-        entrada = input("Valor (ex.: 125,50): ").strip()
+        entrada = input("Valor (ex.: 150,50): ").strip()
         entrada = entrada.replace(",", ".")
 
         try:
             valor = Decimal(entrada)
 
             if not valor.is_finite() or valor <= 0:
-                print("Digite um valor positivo e válido.")
+                print("Digite um valor maior que zero.")
+                continue
+
+            if valor.as_tuple().exponent < -2:
+                print("Digite no maximo duas casas decimais.")
                 continue
 
             return valor.quantize(Decimal("0.01"))
 
         except InvalidOperation:
-            print("Valor inválido. Tente novamente.")
+            print("Valor invalido. Tente novamente.")
 
 
 def cadastrar_movimentacao(movimentacoes, tipo):
-    """Registra uma receita ou despesa."""
-    descricao = input("Descrição: ").strip()
+    """Cadastra uma receita ou despesa."""
+    print(f"\n--- Cadastrar {tipo.capitalize()} ---")
+
+    descricao = input("Descricao: ").strip()
 
     if not descricao:
-        print("A descrição não pode ficar vazia.")
+        print("A descricao nao pode ficar vazia.")
         return
 
     categoria = input("Categoria: ").strip()
 
     if not categoria:
-        print("A categoria não pode ficar vazia.")
+        print("A categoria nao pode ficar vazia.")
         return
 
     valor = ler_valor()
@@ -93,53 +149,50 @@ def cadastrar_movimentacao(movimentacoes, tipo):
     movimentacoes.append(movimentacao)
 
     if salvar_dados(movimentacoes):
-        print(f"{tipo.capitalize()} registrada com sucesso!")
+        print(f"{tipo.capitalize()} cadastrada com sucesso!")
     else:
         movimentacoes.pop()
-        print("Não foi possível registrar a movimentação.")
-
-
-def formatar_moeda(valor):
-    """Formata um valor como moeda brasileira."""
-    valor_formatado = f"{valor:,.2f}"
-    valor_formatado = (
-        valor_formatado
-        .replace(",", "X")
-        .replace(".", ",")
-        .replace("X", ".")
-    )
-    return f"R$ {valor_formatado}"
+        print("Nao foi possivel cadastrar a movimentacao.")
 
 
 def listar_movimentacoes(movimentacoes):
-    """Exibe todas as receitas e despesas."""
-    if not movimentacoes:
-        print("\nNenhuma movimentação cadastrada.")
-        return
+    """Exibe todas as movimentacoes registradas."""
+    print("\n--- Movimentacoes Financeiras ---")
 
-    print("\n--- MOVIMENTAÇÕES ---")
+    if not movimentacoes:
+        print("Nenhuma movimentacao cadastrada.")
+        return
 
     for indice, item in enumerate(movimentacoes, start=1):
         valor = Decimal(item["valor"])
+        data_formatada = date.fromisoformat(
+            item["data"]
+        ).strftime("%d/%m/%Y")
 
         print(f"\n{indice}. {item['descricao']}")
         print(f"   Tipo: {item['tipo'].capitalize()}")
         print(f"   Categoria: {item['categoria']}")
         print(f"   Valor: {formatar_moeda(valor)}")
-        print(f"   Data: {item['data']}")
+        print(f"   Data: {data_formatada}")
 
 
 def calcular_totais(movimentacoes):
-    """Calcula o total de receitas e despesas."""
+    """Calcula os totais de receitas e despesas."""
     receitas = sum(
-        (Decimal(item["valor"]) for item in movimentacoes
-         if item["tipo"] == "receita"),
+        (
+            Decimal(item["valor"])
+            for item in movimentacoes
+            if item["tipo"] == "receita"
+        ),
         Decimal("0.00")
     )
 
     despesas = sum(
-        (Decimal(item["valor"]) for item in movimentacoes
-         if item["tipo"] == "despesa"),
+        (
+            Decimal(item["valor"])
+            for item in movimentacoes
+            if item["tipo"] == "despesa"
+        ),
         Decimal("0.00")
     )
 
@@ -147,70 +200,74 @@ def calcular_totais(movimentacoes):
 
 
 def consultar_saldo(movimentacoes):
-    """Exibe o saldo financeiro atual."""
+    """Apresenta o saldo financeiro atual."""
     receitas, despesas = calcular_totais(movimentacoes)
     saldo = receitas - despesas
 
-    print("\n--- SALDO FINANCEIRO ---")
-    print(f"Receitas: {formatar_moeda(receitas)}")
-    print(f"Despesas: {formatar_moeda(despesas)}")
-    print(f"Saldo:    {formatar_moeda(saldo)}")
+    print("\n--- Saldo Financeiro ---")
+    print(f"Total de receitas: {formatar_moeda(receitas)}")
+    print(f"Total de despesas: {formatar_moeda(despesas)}")
+    print(f"Saldo atual:       {formatar_moeda(saldo)}")
 
 
 def gerar_relatorio(movimentacoes):
-    """Exibe um resumo financeiro por categoria."""
+    """Gera um resumo financeiro e agrupa despesas por categoria."""
     receitas, despesas = calcular_totais(movimentacoes)
 
-    print("\n--- RELATÓRIO FINANCEIRO ---")
-    print(f"Total de receitas: {formatar_moeda(receitas)}")
-    print(f"Total de despesas: {formatar_moeda(despesas)}")
-    print(f"Saldo final: {formatar_moeda(receitas - despesas)}")
+    print("\n--- Relatorio Financeiro ---")
+    print(f"Receitas: {formatar_moeda(receitas)}")
+    print(f"Despesas: {formatar_moeda(despesas)}")
+    print(f"Saldo:    {formatar_moeda(receitas - despesas)}")
 
-    gastos_categoria = {}
+    categorias = {}
 
     for item in movimentacoes:
         if item["tipo"] == "despesa":
             categoria = item["categoria"]
             valor = Decimal(item["valor"])
 
-            gastos_categoria[categoria] = (
-                gastos_categoria.get(categoria, Decimal("0.00"))
+            categorias[categoria] = (
+                categorias.get(categoria, Decimal("0.00"))
                 + valor
             )
 
     print("\nDespesas por categoria:")
 
-    if not gastos_categoria:
-        print("Nenhuma despesa registrada.")
-    else:
-        for categoria, valor in sorted(
-            gastos_categoria.items(),
-            key=lambda item: item[1],
-            reverse=True
-        ):
-            print(f"- {categoria}: {formatar_moeda(valor)}")
+    if not categorias:
+        print("Nenhuma despesa cadastrada.")
+        return
+
+    for categoria, valor in sorted(
+        categorias.items(),
+        key=lambda item: item[1],
+        reverse=True
+    ):
+        print(f"{categoria}: {formatar_moeda(valor)}")
 
 
 def menu():
-    movimentacoes = carregar_dados()
-
-    if movimentacoes is None:
-        print("Corrija ou restaure o arquivo dados.json antes de continuar.")
+    """Executa o menu principal do sistema."""
+    try:
+        movimentacoes = carregar_dados()
+    except RuntimeError as erro:
+        print(erro)
+        print("Verifique o arquivo dados.json antes de continuar.")
         return
 
     while True:
-        print("\n" + "=" * 38)
-        print("   CONTROLE FINANCEIRO PESSOAL")
-        print("=" * 38)
+        print("\n" + "=" * 42)
+        print("      CONTROLE FINANCEIRO PESSOAL")
+        print("               VERSAO 1.4")
+        print("=" * 42)
         print("1 - Cadastrar receita")
         print("2 - Cadastrar despesa")
-        print("3 - Listar movimentações")
+        print("3 - Listar movimentacoes")
         print("4 - Consultar saldo")
-        print("5 - Gerar relatório")
+        print("5 - Gerar relatorio financeiro")
         print("0 - Sair")
-        print("=" * 38)
+        print("=" * 42)
 
-        opcao = input("Escolha uma opção: ").strip()
+        opcao = input("Escolha uma opcao: ").strip()
 
         if opcao == "1":
             cadastrar_movimentacao(movimentacoes, "receita")
@@ -228,11 +285,11 @@ def menu():
             gerar_relatorio(movimentacoes)
 
         elif opcao == "0":
-            print("Sistema encerrado. Até mais!")
+            print("Sistema encerrado. Ate mais!")
             break
 
         else:
-            print("Opção inválida. Escolha uma opção do menu.")
+            print("Opcao invalida. Tente novamente.")
 
 
 if __name__ == "__main__":
