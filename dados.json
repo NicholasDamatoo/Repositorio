@@ -1,9 +1,9 @@
 [
     {
         "tipo": "receita",
-        "descricao": "Limao",
-        "categoria": "Fruta",
-        "valor": "998.00",
+        "descricao": "bolo de fubá",
+        "categoria": "bolo",
+        "valor": "99.00",
         "data": "2026-10-16"
     }
 ]
