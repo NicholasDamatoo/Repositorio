@@ -12,5 +12,12 @@
         "categoria": "pao",
         "valor": "1000.00",
         "data": "2026-10-16"
+    },
+    {
+        "tipo": "receita",
+        "descricao": "bolo de chocolate",
+        "categoria": "bolo",
+        "valor": "120.00",
+        "data": "2026-10-16"
     }
 ]
